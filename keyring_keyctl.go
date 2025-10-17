@@ -7,7 +7,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/jsipprell/keyctl"
+	"golang.org/x/sys/unix"
 )
 
 type keyctlProvider struct{}
@@ -21,7 +21,8 @@ func init() {
 
 // Set stores user and pass in the keyring under the defined service name using keyctl.
 func (k keyctlProvider) Set(service, user, pass string) error {
-	keyring, err := keyctl.SessionKeyring()
+	// Get the session keyring ID
+	sessionKeyring, err := unix.KeyctlGetKeyringID(unix.KEY_SPEC_SESSION_KEYRING, true)
 	if err != nil {
 		return err
 	}
@@ -29,20 +30,21 @@ func (k keyctlProvider) Set(service, user, pass string) error {
 	keyName := fmt.Sprintf("%s:%s", service, user)
 
 	// Check if key already exists and remove it
-	existingKey, err := keyring.Search(keyName)
+	existingKeyID, err := unix.KeyctlSearch(sessionKeyring, "user", keyName, 0)
 	if err == nil {
 		// Key exists, unlink it first
-		_ = existingKey.Unlink()
+		_, _ = unix.KeyctlInt(unix.KEYCTL_UNLINK, existingKeyID, sessionKeyring, 0, 0)
 	}
 
 	// Add the new key
-	_, err = keyring.Add(keyName, []byte(pass))
+	_, err = unix.AddKey("user", keyName, []byte(pass), sessionKeyring)
 	return err
 }
 
 // Get gets a secret from the keyring given a service name and a user using keyctl.
 func (k keyctlProvider) Get(service, user string) (string, error) {
-	keyring, err := keyctl.SessionKeyring()
+	// Get the session keyring ID
+	sessionKeyring, err := unix.KeyctlGetKeyringID(unix.KEY_SPEC_SESSION_KEYRING, true)
 	if err != nil {
 		return "", err
 	}
@@ -50,23 +52,32 @@ func (k keyctlProvider) Get(service, user string) (string, error) {
 	keyName := fmt.Sprintf("%s:%s", service, user)
 
 	// Search for the key
-	key, err := keyring.Search(keyName)
+	keyID, err := unix.KeyctlSearch(sessionKeyring, "user", keyName, 0)
 	if err != nil {
 		return "", ErrNotFound
 	}
 
-	// Get the key data
-	data, err := key.Get()
+	// Read the key data
+	// First, get the size of the key
+	size, err := unix.KeyctlBuffer(unix.KEYCTL_READ, keyID, nil, 0)
 	if err != nil {
 		return "", err
 	}
 
-	return string(data), nil
+	// Allocate buffer and read the key
+	buf := make([]byte, size)
+	_, err = unix.KeyctlBuffer(unix.KEYCTL_READ, keyID, buf, 0)
+	if err != nil {
+		return "", err
+	}
+
+	return string(buf), nil
 }
 
 // Delete deletes a secret, identified by service & user, from the keyring using keyctl.
 func (k keyctlProvider) Delete(service, user string) error {
-	keyring, err := keyctl.SessionKeyring()
+	// Get the session keyring ID
+	sessionKeyring, err := unix.KeyctlGetKeyringID(unix.KEY_SPEC_SESSION_KEYRING, true)
 	if err != nil {
 		return err
 	}
@@ -74,13 +85,14 @@ func (k keyctlProvider) Delete(service, user string) error {
 	keyName := fmt.Sprintf("%s:%s", service, user)
 
 	// Search for the key
-	key, err := keyring.Search(keyName)
+	keyID, err := unix.KeyctlSearch(sessionKeyring, "user", keyName, 0)
 	if err != nil {
 		return ErrNotFound
 	}
 
-	// Unlink the key
-	return key.Unlink()
+	// Unlink the key from the session keyring
+	_, err = unix.KeyctlInt(unix.KEYCTL_UNLINK, keyID, sessionKeyring, 0, 0)
+	return err
 }
 
 // DeleteAll deletes all secrets for a given service using keyctl.
@@ -90,7 +102,8 @@ func (k keyctlProvider) DeleteAll(service string) error {
 		return ErrNotFound
 	}
 
-	keyring, err := keyctl.SessionKeyring()
+	// Get the session keyring ID
+	sessionKeyring, err := unix.KeyctlGetKeyringID(unix.KEY_SPEC_SESSION_KEYRING, true)
 	if err != nil {
 		return err
 	}
@@ -129,9 +142,9 @@ func (k keyctlProvider) DeleteAll(service string) error {
 		}
 
 		// Search for the key by its full description and delete it
-		key, err := keyring.Search(keyDesc)
+		keyID, err := unix.KeyctlSearch(sessionKeyring, "user", keyDesc, 0)
 		if err == nil {
-			_ = key.Unlink()
+			_, _ = unix.KeyctlInt(unix.KEYCTL_UNLINK, keyID, sessionKeyring, 0, 0)
 		}
 	}
 
