@@ -4,8 +4,8 @@
 [![GoDoc](https://godoc.org/github.com/zalando/go-keyring?status.svg)](https://godoc.org/github.com/zalando/go-keyring)
 
 `go-keyring` is an OS-agnostic library for *setting*, *getting* and *deleting*
-secrets from the system keyring. It supports **OS X**, **Linux/BSD (dbus)** and
-**Windows**.
+secrets from the system keyring. It supports **OS X**, **Linux/BSD** (via dbus or keyctl),
+and **Windows**.
 
 go-keyring was created after its authors searched for, but couldn't find, a better alternative. It aims to simplify
 using statically linked binaries, which is cumbersome when relying on C bindings (as other keyring libraries do).
@@ -37,6 +37,15 @@ keyring frontend program [Seahorse](https://wiki.gnome.org/Apps/Seahorse):
 * Go to **File > New > Password Keyring**
 * Click **Continue**
 * When asked for a name, use: **login**
+
+##### Keyctl Backend (Linux only)
+
+On Linux, if the Secret Service is not available (e.g., in headless environments or CI/CD),
+the library will automatically fall back to using the [kernel keyring](https://www.man7.org/linux/man-pages/man7/keyrings.7.html)
+via `keyctl`. This provides a lightweight alternative that doesn't require dbus or GNOME Keyring.
+
+The keyctl backend stores secrets in the session keyring and requires the `keyctl` command-line
+tool to be available in the system PATH.
 
 ## Example Usage
 

@@ -9,6 +9,44 @@ import (
 	ss "github.com/zalando/go-keyring/secret_service"
 )
 
+// compositeProvider tries Secret Service first, then falls back to keyctl on Linux
+type compositeProvider struct {
+	primary  Keyring
+	fallback Keyring
+}
+
+func (c compositeProvider) Set(service, user, pass string) error {
+	err := c.primary.Set(service, user, pass)
+	if err != nil && c.fallback != nil {
+		return c.fallback.Set(service, user, pass)
+	}
+	return err
+}
+
+func (c compositeProvider) Get(service, user string) (string, error) {
+	result, err := c.primary.Get(service, user)
+	if err != nil && c.fallback != nil {
+		return c.fallback.Get(service, user)
+	}
+	return result, err
+}
+
+func (c compositeProvider) Delete(service, user string) error {
+	err := c.primary.Delete(service, user)
+	if err != nil && c.fallback != nil {
+		return c.fallback.Delete(service, user)
+	}
+	return err
+}
+
+func (c compositeProvider) DeleteAll(service string) error {
+	err := c.primary.DeleteAll(service)
+	if err != nil && c.fallback != nil {
+		return c.fallback.DeleteAll(service)
+	}
+	return err
+}
+
 type secretServiceProvider struct{}
 
 // Set stores user and pass in the keyring under the defined service
@@ -177,6 +215,32 @@ func (s secretServiceProvider) DeleteAll(service string) error {
 	return nil
 }
 
+// getFallbackProvider returns the appropriate fallback provider for the platform
+// Defined in platform-specific files (e.g., keyring_keyctl.go for Linux)
+var getFallbackProvider = func() Keyring {
+	return nil
+}
+
 func init() {
-	provider = secretServiceProvider{}
+	// Try to initialize Secret Service
+	svc, err := ss.NewSecretService()
+	if err == nil {
+		// Secret Service is available
+		svc.Close(nil)
+		provider = secretServiceProvider{}
+	} else {
+		// Secret Service not available, use compositeProvider with fallback
+		// Note: We still try Secret Service as primary for forward compatibility
+		// but will fallback to keyctl if it's not available
+		fallback := getFallbackProvider()
+		if fallback != nil {
+			provider = compositeProvider{
+				primary:  secretServiceProvider{},
+				fallback: fallback,
+			}
+		} else {
+			// No fallback available, keep using Secret Service (will error on operations)
+			provider = secretServiceProvider{}
+		}
+	}
 }
