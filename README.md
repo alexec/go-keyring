@@ -47,6 +47,37 @@ via `keyctl`. This provides a lightweight alternative that doesn't require dbus 
 The keyctl backend stores secrets in the session keyring and requires the `keyctl` command-line
 tool to be available in the system PATH.
 
+**Installing keyctl:**
+
+The `keyctl` utility is part of the `keyutils` package. Install it using your distribution's package manager:
+
+* **Ubuntu/Debian:**
+  ```bash
+  sudo apt-get install keyutils
+  ```
+
+* **Fedora/RHEL/CentOS:**
+  ```bash
+  sudo dnf install keyutils
+  # or
+  sudo yum install keyutils
+  ```
+
+* **Arch Linux:**
+  ```bash
+  sudo pacman -S keyutils
+  ```
+
+* **Alpine Linux:**
+  ```bash
+  apk add keyutils
+  ```
+
+To verify the installation, run:
+```bash
+keyctl --version
+```
+
 ## Example Usage
 
 How to *set* and *get* a secret from the keyring:
