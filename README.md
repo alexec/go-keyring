@@ -78,6 +78,35 @@ To verify the installation, run:
 keyctl --version
 ```
 
+**Pros and Cons of the keyctl backend:**
+
+**Pros:**
+* **Lightweight**: No dbus or desktop environment required
+* **Fast**: Direct kernel interface with minimal overhead
+* **Simple**: No external daemon dependencies
+* **Portable**: Works in containers, CI/CD, and headless environments
+* **Secure**: Secrets stored in kernel memory, not on disk
+
+**Cons:**
+* **Session-scoped**: Secrets are stored in the session keyring and **do not persist across reboots or new login sessions**
+* **User-isolated**: Each user session has its own keyring; secrets are not shared between users or sessions
+* **Limited lifetime**: Keys may expire based on kernel settings (though typically persist for the session duration)
+* **No GUI integration**: Unlike Secret Service/GNOME Keyring, there's no graphical management interface
+* **Requires keyctl command**: The `keyctl` binary must be installed and available in PATH for DeleteAll operations
+
+**When to use keyctl backend:**
+* Short-lived credentials in CI/CD pipelines
+* Container environments without dbus
+* Development and testing environments
+* Headless servers where persistence across reboots is not required
+* Applications that manage their own credential refresh/re-authentication
+
+**When to use Secret Service backend:**
+* Desktop applications requiring persistent storage
+* Long-lived credentials that should survive reboots
+* Environments with GNOME Keyring or KDE Wallet available
+* Applications requiring GUI integration for password management
+
 ## Example Usage
 
 How to *set* and *get* a secret from the keyring:
