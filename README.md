@@ -44,8 +44,7 @@ On Linux, if the Secret Service is not available (e.g., in headless environments
 the library will automatically fall back to using the [kernel keyring](https://www.man7.org/linux/man-pages/man7/keyrings.7.html)
 via `keyctl`. This provides a lightweight alternative that doesn't require dbus or GNOME Keyring.
 
-The keyctl backend stores secrets in the session keyring and requires the `keyctl` command-line
-tool to be available in the system PATH.
+The keyctl backend stores secrets in the persistent keyring, which survives logout and persists across multiple sessions for the same user. Keys have a default expiry of 3 days (resettable on each access). The `keyctl` command-line tool must be available in the system PATH.
 
 **Installing keyctl:**
 
@@ -86,20 +85,22 @@ keyctl --version
 * **Simple**: No external daemon dependencies
 * **Portable**: Works in containers, CI/CD, and headless environments
 * **Secure**: Secrets stored in kernel memory, not on disk
+* **Persists across sessions**: Survives logout and works across multiple login sessions for the same user
+* **Auto-expiry**: Keys automatically expire after 3 days of inactivity (configurable)
 
 **Cons:**
-* **Session-scoped**: Secrets are stored in the session keyring and **do not persist across reboots or new login sessions**
-* **User-isolated**: Each user session has its own keyring; secrets are not shared between users or sessions
-* **Limited lifetime**: Keys may expire based on kernel settings (though typically persist for the session duration)
+* **Does not survive reboots**: Secrets are stored in kernel memory and cleared on system reboot
+* **User-scoped**: Shared across all sessions for the same user (less isolation than session keyring)
+* **Limited lifetime**: Keys expire after 3 days of inactivity (though timer resets on each access)
 * **No GUI integration**: Unlike Secret Service/GNOME Keyring, there's no graphical management interface
 * **Requires keyctl command**: The `keyctl` binary must be installed and available in PATH for DeleteAll operations
 
 **When to use keyctl backend:**
-* Short-lived credentials in CI/CD pipelines
-* Container environments without dbus
+* Container environments with persistent volumes (credentials persist across container restarts)
+* CI/CD pipelines and automation tasks
 * Development and testing environments
-* Headless servers where persistence across reboots is not required
-* Applications that manage their own credential refresh/re-authentication
+* Headless servers and systemd services
+* Applications where secrets are injected on startup and need to persist across sessions but not reboots
 
 **When to use Secret Service backend:**
 * Desktop applications requiring persistent storage

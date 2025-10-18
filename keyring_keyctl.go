@@ -19,10 +19,23 @@ func init() {
 	}
 }
 
+// getPersistentKeyring gets or creates the persistent keyring for the current user.
+// The persistent keyring survives logout and persists across multiple sessions,
+// with a default expiry of 3 days (resettable on each access).
+func (k keyctlProvider) getPersistentKeyring() (int, error) {
+	// Get the persistent keyring for the current user
+	// KEYCTL_GET_PERSISTENT with -1 means current UID
+	persistentKeyringID, err := unix.KeyctlInt(unix.KEYCTL_GET_PERSISTENT, -1, unix.KEY_SPEC_SESSION_KEYRING, 0, 0)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get persistent keyring: %w", err)
+	}
+	return persistentKeyringID, nil
+}
+
 // Set stores user and pass in the keyring under the defined service name using keyctl.
 func (k keyctlProvider) Set(service, user, pass string) error {
-	// Get the session keyring ID
-	sessionKeyring, err := unix.KeyctlGetKeyringID(unix.KEY_SPEC_SESSION_KEYRING, true)
+	// Get the persistent keyring ID
+	persistentKeyring, err := k.getPersistentKeyring()
 	if err != nil {
 		return err
 	}
@@ -30,21 +43,21 @@ func (k keyctlProvider) Set(service, user, pass string) error {
 	keyName := fmt.Sprintf("%s:%s", service, user)
 
 	// Check if key already exists and remove it
-	existingKeyID, err := unix.KeyctlSearch(sessionKeyring, "user", keyName, 0)
+	existingKeyID, err := unix.KeyctlSearch(persistentKeyring, "user", keyName, 0)
 	if err == nil {
 		// Key exists, unlink it first
-		_, _ = unix.KeyctlInt(unix.KEYCTL_UNLINK, existingKeyID, sessionKeyring, 0, 0)
+		_, _ = unix.KeyctlInt(unix.KEYCTL_UNLINK, existingKeyID, persistentKeyring, 0, 0)
 	}
 
 	// Add the new key
-	_, err = unix.AddKey("user", keyName, []byte(pass), sessionKeyring)
+	_, err = unix.AddKey("user", keyName, []byte(pass), persistentKeyring)
 	return err
 }
 
 // Get gets a secret from the keyring given a service name and a user using keyctl.
 func (k keyctlProvider) Get(service, user string) (string, error) {
-	// Get the session keyring ID
-	sessionKeyring, err := unix.KeyctlGetKeyringID(unix.KEY_SPEC_SESSION_KEYRING, true)
+	// Get the persistent keyring ID
+	persistentKeyring, err := k.getPersistentKeyring()
 	if err != nil {
 		return "", err
 	}
@@ -52,7 +65,7 @@ func (k keyctlProvider) Get(service, user string) (string, error) {
 	keyName := fmt.Sprintf("%s:%s", service, user)
 
 	// Search for the key
-	keyID, err := unix.KeyctlSearch(sessionKeyring, "user", keyName, 0)
+	keyID, err := unix.KeyctlSearch(persistentKeyring, "user", keyName, 0)
 	if err != nil {
 		return "", ErrNotFound
 	}
@@ -76,8 +89,8 @@ func (k keyctlProvider) Get(service, user string) (string, error) {
 
 // Delete deletes a secret, identified by service & user, from the keyring using keyctl.
 func (k keyctlProvider) Delete(service, user string) error {
-	// Get the session keyring ID
-	sessionKeyring, err := unix.KeyctlGetKeyringID(unix.KEY_SPEC_SESSION_KEYRING, true)
+	// Get the persistent keyring ID
+	persistentKeyring, err := k.getPersistentKeyring()
 	if err != nil {
 		return err
 	}
@@ -85,13 +98,13 @@ func (k keyctlProvider) Delete(service, user string) error {
 	keyName := fmt.Sprintf("%s:%s", service, user)
 
 	// Search for the key
-	keyID, err := unix.KeyctlSearch(sessionKeyring, "user", keyName, 0)
+	keyID, err := unix.KeyctlSearch(persistentKeyring, "user", keyName, 0)
 	if err != nil {
 		return ErrNotFound
 	}
 
-	// Unlink the key from the session keyring
-	_, err = unix.KeyctlInt(unix.KEYCTL_UNLINK, keyID, sessionKeyring, 0, 0)
+	// Unlink the key from the persistent keyring
+	_, err = unix.KeyctlInt(unix.KEYCTL_UNLINK, keyID, persistentKeyring, 0, 0)
 	return err
 }
 
@@ -102,17 +115,15 @@ func (k keyctlProvider) DeleteAll(service string) error {
 		return ErrNotFound
 	}
 
-	// Get the session keyring ID
-	sessionKeyring, err := unix.KeyctlGetKeyringID(unix.KEY_SPEC_SESSION_KEYRING, true)
+	// Get the persistent keyring ID
+	persistentKeyring, err := k.getPersistentKeyring()
 	if err != nil {
 		return err
 	}
 
-	// Use the keyctl command to list keys and find ones matching our service
-	// The format of 'keyctl show @s' output is:
-	// Session Keyring
-	//  keyid perms  uid   gid description
-	cmd := exec.Command("keyctl", "show", "@s")
+	// Use the keyctl command to list keys in the persistent keyring
+	// The persistent keyring ID format is a decimal number
+	cmd := exec.Command("keyctl", "show", fmt.Sprintf("%d", persistentKeyring))
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		// If keyctl command fails, return nil (no keys to delete)
@@ -142,9 +153,9 @@ func (k keyctlProvider) DeleteAll(service string) error {
 		}
 
 		// Search for the key by its full description and delete it
-		keyID, err := unix.KeyctlSearch(sessionKeyring, "user", keyDesc, 0)
+		keyID, err := unix.KeyctlSearch(persistentKeyring, "user", keyDesc, 0)
 		if err == nil {
-			_, _ = unix.KeyctlInt(unix.KEYCTL_UNLINK, keyID, sessionKeyring, 0, 0)
+			_, _ = unix.KeyctlInt(unix.KEYCTL_UNLINK, keyID, persistentKeyring, 0, 0)
 		}
 	}
 
